@@ -104,7 +104,7 @@ TypeScript를 쓰지 않아도 `@types/*`가 있으면 VS Code IntelliSense가 `
 
 `main.jsx`에서 `<StrictMode>`로 앱을 감싸고 있다. StrictMode는 **개발 모드에서만** 컴포넌트를 두 번 마운트하고 `useEffect`를 두 번 실행한다 (프로덕션에서는 1회).
 
-```
+```text
 개발 모드 실행 순서:
 mount → effect 실행 → unmount → mount → effect 실행  ← 이것이 실제 동작
 ```
