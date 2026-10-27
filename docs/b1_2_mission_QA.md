@@ -35,11 +35,13 @@ Supabase `bookmarks` 테이블을 대상으로 전체 CRUD가 구현되어 있�
 
 | 동작 | 파일 | Supabase 호출 |
 | --- | --- | --- |
-| 목록 조회 | `BookmarksPage` + `useBookmarks` | `.select("*").order("created_at", { ascending: false })` |
-| 상세 조회 | `BookmarkDetailPage` + `useBookmark` | `.select("*").eq("id", id).maybeSingle()` |
-| 등록 | `BookmarkNewPage` → `handleCreate` | `.insert(values).select().single()` |
-| 수정 | `BookmarkEditPage` → `handleUpdate` | `.update(values).eq("id", id)` |
-| 삭제 | `BookmarkDetailPage` → `handleDelete` | `.delete().eq("id", id)` |
+| 동작 | 파일 | Supabase 쿼리 | 성공 후 | 실패 처리 |
+| --- | --- | --- | --- | --- |
+| 목록 조회 | `useBookmarks.js` | `.select("*").order("created_at", {ascending:false})` | 카드 목록 렌더 | `ErrorState` + 재시도 버튼 |
+| 상세 조회 | `useBookmark.js` | `.select("*").eq("id", id).maybeSingle()` | 상세 렌더 | `ErrorState` / `!bookmark` → "찾을 수 없음" |
+| 등록 | `BookmarkNewPage.handleCreate` | `.insert(values).select().single()` | 새 레코드 상세 이동 | `submitError` → 폼 상단 에러 |
+| 수정 | `BookmarkEditPage.handleUpdate` | `.update(values).eq("id", id)` | 해당 상세 이동 | `submitError` → 폼 상단 에러 |
+| 삭제 | `BookmarkDetailPage.handleDelete` | `.delete().eq("id", id)` | 목록 이동 | `deleteError` → 버튼 위 인라인 에러 |
 
 목록 페이지(`/bookmarks`)와 상세 페이지(`/bookmarks/:id`)가 분리되어 있다.
 
@@ -68,13 +70,20 @@ Supabase `bookmarks` 테이블을 대상으로 전체 CRUD가 구현되어 있�
 
 세 가지 공용 컴포넌트로 통일되어 있다.
 
-| 상태 | 컴포넌트 | 적용 화면 |
-| --- | --- | --- |
-| 로딩 중 | `Loading` (`role="status"`) | `BookmarksPage`, `BookmarkDetailPage`, `BookmarkEditPage` |
-| 에러 | `ErrorState` (`role="alert"`, 재시도 버튼) | 동일 |
-| 빈 데이터 | `EmptyState` | `BookmarkList` |
+| 상태 | 컴포넌트 | ARIA | 적용 화면 |
+| --- | --- | --- | --- |
+| 로딩 중 | `Loading` | `role="status"` | `BookmarksPage`, `BookmarkDetailPage`, `BookmarkEditPage` |
+| 에러 | `ErrorState` | `role="alert"` | 동일 (onRetry 있으면 재시도 버튼 렌더) |
+| 빈 데이터 | `EmptyState` | — | `BookmarkList` 내부 |
 
-상태 분리: 데이터·비동기 상태는 커스텀 훅이 소유하고, 폼 상태는 `BookmarkForm`이 로컬로 소유한다. 페이지는 CRUD 요청과 라우팅만 담당한다.
+**근거 — `src/pages/BookmarksPage.jsx`:**
+```jsx
+{loading && <Loading message="북마크를 불러오는 중..." />}
+{!loading && error && <ErrorState message="요청에 실패했습니다. 다시 시도하세요." onRetry={refetch} />}
+{!loading && !error && <BookmarkList bookmarks={filtered} />}
+```
+
+상태 분리: 비동기 데이터(`bookmarks`, `loading`, `error`)는 `useBookmarks` / `useBookmark` 훅이 소유하고, 폼 상태(`values`, `errors`, `submitting`)는 `BookmarkForm`이 소유한다. 페이지는 CRUD 요청·라우팅만 담당한다.
 
 ---
 
@@ -226,7 +235,7 @@ useEffect(() => { refetch(); }, [refetch]);              // refetch 바뀌면 �
 | 폼 입력 상태 (controlled input) | ✅ | `BookmarkForm`의 `values` state — 모든 input이 `value={values.xxx}`로 제어됨 |
 | 목록/상세 데이터 상태 | ✅ | `useBookmarks`의 `bookmarks` state, `useBookmark`의 `bookmark` state |
 | 로딩/에러 상태 | ✅ | 두 훅 모두 `loading`, `error` state 관리 |
-| 커스텀 훅으로 분리 (1개 이상) | ✅ | `useBookmarks()` (목록), `useBookmark(id)` (단건) — 2개 |
+| 커스텀 훅으로 분리 (1개 이상) | ✅ | `src/hooks/useBookmarks.js` (목록, BookmarksPage), `src/hooks/useBookmark.js` (단건, BookmarkDetailPage + BookmarkEditPage) — 2개 |
 
 ---
 
@@ -275,9 +284,11 @@ useEffect(() => { refetch(); }, [refetch]);              // refetch 바뀌면 �
 
 | 항목 | 체크 | 근거 |
 | --- | --- | --- |
-| 목록/상세 조회 동작 | ✅ | Vercel 환경변수에 Supabase 키 등록, 앱 배포 완료 |
-| 등록/수정/삭제 동작 | ✅ | 동일 |
-| 환경변수 누락으로 인한 기능 불동작 없음 | ✅ | Vercel 대시보드에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 등록 |
+| 목록/상세 조회 동작 | ✅ | `https://codyssey-b1-2.vercel.app/bookmarks` — 카드 목록 렌더, 카테고리 필터 동작 확인 |
+| 등록/수정/삭제 동작 | ✅ | 등록 → 상세 이동, 수정 → 상세 이동, 삭제 → 목록 이동 흐름 전부 확인 |
+| 환경변수 누락으로 인한 기능 불동작 없음 | ✅ | Vercel 대시보드에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 등록, `vercel.json` SPA rewrite 설정 완료 |
+| 직접 URL 접근 | ✅ | `/bookmarks/new` 등 직접 입력 시 `vercel.json` rewrite → `index.html` → React Router 처리 |
+| Not Found | ✅ | 존재하지 않는 경로 → `*` 라우트 → `NotFoundPage` ("404 페이지를 찾을 수 없습니다.") |
 
 ---
 

@@ -90,16 +90,43 @@
 
 ### Q. 데이터 조회/갱신 흐름 중 최소 1개 이상이 커스텀 훅으로 분리되어 있고 왜 분리했는지 설명할 수 있는가?
 
-**✅**
+**✅ — 2개 훅**
 
-`useBookmarks`(목록 조회), `useBookmark(id)`(단건 조회) 2개를 분리했다.
+**`src/hooks/useBookmarks.js`** — 목록 조회
+```js
+export function useBookmarks() {
+  const [bookmarks, setBookmarks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const refetch = useCallback(async () => { ... }, []);
+  useEffect(() => { refetch(); }, [refetch]);
+  return { bookmarks, loading, error, refetch };
+}
+```
+- 사용처: `BookmarksPage` (1곳)
+
+**`src/hooks/useBookmark.js`** — 단건 조회 (id 기반)
+```js
+export function useBookmark(id) {
+  const [bookmark, setBookmark] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const refetch = useCallback(async () => {
+    ...
+    .eq("id", id).maybeSingle();   // 없으면 null, 에러 아님
+  }, [id]);                         // id 바뀌면 새 함수 → useEffect 재실행
+  useEffect(() => { refetch(); }, [refetch]);
+  return { bookmark, loading, error, refetch };
+}
+```
+- 사용처: `BookmarkDetailPage`, `BookmarkEditPage` (2곳)
 
 **분리한 이유:**
-1. **관심사 분리**: 페이지 컴포넌트가 "어떻게 데이터를 가져오는가"를 몰라도 된다. `loading`, `error`, `data`, `refetch`만 받아서 화면에 집중한다.
-2. **재사용**: `useBookmark(id)`는 `BookmarkDetailPage`와 `BookmarkEditPage` 두 곳에서 같은 훅을 쓴다. 훅 없이 구현했다면 동일한 `useState` + `useEffect` 코드가 두 페이지에 중복된다.
-3. **외부 재조회 가능**: `refetch`를 훅 밖에서 호출할 수 있다. 삭제 후 목록 갱신이나 에러 발생 시 재시도 버튼에서 `refetch`를 직접 호출한다.
+1. **관심사 분리**: 페이지 컴포넌트가 Supabase 쿼리를 몰라도 된다. `{ loading, error, data, refetch }`만 받아 화면에 집중한다.
+2. **재사용 제거 중복**: `useBookmark(id)` 없이 구현하면 `BookmarkDetailPage`와 `BookmarkEditPage` 두 곳에 동일한 `useState` + `useEffect` + Supabase 코드가 중복된다.
+3. **외부 `refetch` 호출**: `ErrorState` 재시도 버튼에서 `refetch()`를 직접 호출한다. 훅 내부에 숨기면 외부 트리거가 불가능하다.
 
-useEffect + useCallback 조합의 기술적 상세 → [tech.md — useEffect + useCallback 패턴](./tech.md#useeffect--usecallback-패턴)
+기술 상세 → [tech.md — useEffect + useCallback 패턴](./tech.md#useeffect--usecallback-패턴)
 
 ---
 
@@ -308,14 +335,23 @@ const [error, setError] = useState(null);      // 실패 시 메시지
 
 **✅**
 
-선택 이유와 어려움 상세 → [tech.md — Supabase 선택 이유](./tech.md#supabase-선택-이유)
+**선택 이유 — Firebase 대신 Supabase를 선택한 근거:**
 
-요약:
-- SQL 기반이라 단일 테이블 구조를 `schema.sql`로 명확히 관리할 수 있다.
-- SDK 메서드 체이닝이 SQL과 1:1 대응되어 읽기 쉽다.
-- RLS 정책으로 "왜 anon 키가 안전한가"를 코드로 증명할 수 있다.
+| 기준 | Supabase | Firebase |
+| --- | --- | --- |
+| DB 구조 | PostgreSQL — 컬럼·타입 명확, `schema.sql`로 버전 관리 가능 | NoSQL — 단순 CRUD에 컬렉션 설계 오버헤드 |
+| SDK 가독성 | `.from("bookmarks").select("*").order(...)` — SQL과 1:1 | `.collection("bookmarks").orderBy(...)` — Firebase 전용 문법 |
+| 보안 근거 명시 | RLS 정책을 `schema.sql`에 SQL로 작성 — "왜 anon 키가 안전한가" 코드로 증명 | Rules 파일 별도 — 연결이 덜 명확 |
 
-겪은 어려움: `useEffect` 의존성 배열 설정 실수로 무한 루프 발생. `refetch` 함수를 `useCallback` 없이 `useEffect` 의존성에 넣으면 렌더마다 새 함수가 만들어져 effect가 계속 재실행된다. `useCallback`으로 메모이제이션해서 해결했다.
+**연동 중 겪은 어려움과 해결:**
+
+| 에러 | 원인 | 해결 |
+| --- | --- | --- |
+| `useEffect` 무한 루프 | `refetch`를 `useCallback` 없이 의존성에 넣어 렌더마다 새 함수 참조 생성 | `useCallback([])` / `useCallback([id])`로 메모이제이션 |
+| `.single()` PostgrestError | 없는 id 조회 시 결과가 0건이어서 에러 발생 | `.maybeSingle()`로 교체 — 없으면 `null` 반환 |
+| 배포 후 흰 화면 | Vercel에 환경변수 미등록 → `supabase.js` 상단 `throw` 실행 | Vercel 대시보드 → Environment Variables 등록, 재배포 |
+
+상세 → [tech.md — Supabase 선택 이유](./tech.md#supabase-선택-이유)
 
 ---
 
