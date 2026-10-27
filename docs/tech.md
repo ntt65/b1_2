@@ -48,6 +48,39 @@ RLS 정책: `anon` 키에 전체 CRUD 허용 (학습 범위 앱, 인증 불필�
 | --- | --- | --- |
 | oxlint | ^1.71.0 | ESLint 대체 Rust 기반 린터, `npm run lint` |
 
+## devDependencies
+
+| 패키지 | 용도 |
+| --- | --- |
+| `@types/react` ^19.2.17 | TypeScript 미사용이지만 IDE(VS Code)가 JSX props 타입을 자동 완성할 때 참조 |
+| `@types/react-dom` ^19.2.3 | 동일 — `createRoot` 등 React DOM API 타입 힌트 |
+
+TypeScript를 쓰지 않아도 `@types/*`가 있으면 VS Code IntelliSense가 `useState<string>()` 대신 `useState("")`처럼 추론해서 편집 경험이 개선된다.
+
+## npm 스크립트
+
+| 명령어 | 내부 실행 | 용도 |
+| --- | --- | --- |
+| `npm run dev` | `vite` | 개발 서버 (HMR, `http://localhost:5173`) |
+| `npm run build` | `vite build` | 프로덕션 번들 → `dist/` |
+| `npm run preview` | `vite preview` | `dist/`를 로컬에서 미리보기 (배포 전 확인용) |
+| `npm run lint` | `oxlint` | 정적 분석 |
+
+## 스타일링
+
+순수 CSS를 사용한다 (`src/index.css` 단일 파일). CSS Modules, Tailwind, styled-components 등 별도 도구 없이 클래스명으로 스타일을 관리한다.
+
+주요 클래스 규약:
+
+| 클래스 | 용도 |
+| --- | --- |
+| `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-ghost` | 버튼 variant |
+| `.field`, `.field-error` | 폼 필드 + 에러 메시지 |
+| `.invalid` | 검증 실패 input 테두리 강조 |
+| `.state`, `.state-loading`, `.state-error`, `.state-empty` | 공통 상태 레이아웃 |
+| `.card`, `.bookmark-card` | 카드 컨테이너 |
+| `.app-shell`, `.app-header`, `.app-main` | 전체 레이아웃 |
+
 ## 배포
 
 | 항목 | 내용 |
@@ -64,6 +97,21 @@ RLS 정책: `anon` 키에 전체 CRUD 허용 (학습 범위 앱, 인증 불필�
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon 공개 키 |
 
 로컬 실행 시 `.env.example`을 복사해 `.env`를 만들고 값을 채운다.
+
+---
+
+## React StrictMode 개발 동작
+
+`main.jsx`에서 `<StrictMode>`로 앱을 감싸고 있다. StrictMode는 **개발 모드에서만** 컴포넌트를 두 번 마운트하고 `useEffect`를 두 번 실행한다 (프로덕션에서는 1회).
+
+```
+개발 모드 실행 순서:
+mount → effect 실행 → unmount → mount → effect 실행  ← 이것이 실제 동작
+```
+
+이 앱에서는 `useBookmarks`와 `useBookmark`의 `useEffect`가 개발 중 Supabase를 **두 번 호출**한다. 이는 의도된 동작으로, 부수 효과가 멱등(idempotent)한지 확인하기 위한 React의 설계다. 네트워크 탭에서 GET 요청이 2번 보여도 버그가 아니다.
+
+프로덕션 빌드(`npm run build` → Vercel 배포)에서는 정상적으로 1회만 호출된다.
 
 ---
 
