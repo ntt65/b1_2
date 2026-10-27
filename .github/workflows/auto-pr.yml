@@ -1,0 +1,67 @@
+name: Auto PR to upstream
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create PR to nttkor/b1_2 (skip if exists)
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_PAT }}
+        run: |
+          EXISTING=$(gh pr list \
+            --repo nttkor/b1_2 \
+            --head ntt65:main \
+            --base main \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already open — skipping"
+            exit 0
+          fi
+
+          gh pr create \
+            --repo nttkor/b1_2 \
+            --head ntt65:main \
+            --base main \
+            --title "[b1-2] React + Supabase 북마크 관리 SPA 구현 — ntt65" \
+            --body "$(cat <<'EOF'
+## 구현 내용
+
+React + Supabase로 개인용 북마크 관리 SPA를 구현했습니다.
+
+## 배포 URL
+
+https://codyssey-b1-2.vercel.app
+
+## 기술 스택
+
+- React 19 + React Router 7
+- Supabase (Postgres + PostgREST)
+- Vite 8 / Vercel 배포
+
+## 필수 요구사항
+
+- [x] 라우트 6개 (`/`, `/bookmarks`, `/bookmarks/new`, `/bookmarks/:id`, `/bookmarks/:id/edit`, `*`)
+- [x] 목록/상세/등록/수정/삭제 CRUD 전체 동작
+- [x] 재사용 컴포넌트 13개 (`Loading`, `ErrorState`, `EmptyState`, `BookmarkForm` 등)
+- [x] 커스텀 훅 2개 (`useBookmarks`, `useBookmark`)
+- [x] 로딩/에러/빈 상태 공용 컴포넌트로 통일
+- [x] 폼 필수값 검증 + 에러 표시 + 제출 중 상태
+- [x] 배포 환경에서 전 기능 동작 확인
+
+## 보너스
+
+- [x] 성능 최적화: `useMemo` (카테고리 필터), `useCallback` (refetch 메모이제이션)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
