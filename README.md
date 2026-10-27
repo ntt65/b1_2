@@ -97,6 +97,26 @@ useEffect(() => { refetch(); }, [refetch]); // id 바뀌면 refetch 새 참조 �
 
 ---
 
+## Supabase 선택 이유 및 연동 경험
+
+### 선택 이유
+
+Firebase 대신 Supabase를 선택한 이유는 세 가지다.
+
+1. **SQL 기반 구조**: Supabase는 PostgreSQL을 그대로 사용한다. `schema.sql` 한 파일로 테이블·컬럼·RLS 정책을 버전 관리할 수 있고, 이번처럼 단일 테이블 CRUD에서는 NoSQL보다 컬럼 구조가 명확해 유리하다.
+2. **직관적인 SDK**: `supabase.from("bookmarks").select("*").order(...)` 형태로 메서드 체이닝이 SQL과 1:1 대응된다. 쿼리 의도를 코드에서 바로 읽을 수 있어 학습 비용이 낮았다.
+3. **RLS로 anon 키 노출 근거 명시 가능**: 인증 없이 anon 키를 사용하는 구조임에도, `schema.sql`에 RLS 정책을 SQL로 명시해 "왜 이 키가 노출되어도 되는가"를 코드로 증명할 수 있다.
+
+### 연동 중 겪은 어려움
+
+`useEffect` + `useCallback` 조합에서 의존성 배열을 잘못 설정하면 무한 루프가 발생했다. `refetch` 함수를 `useCallback` 없이 `useEffect` 의존성 배열에 넣으면 렌더마다 새 함수 참조가 생성되어 effect가 계속 재실행된다. `useCallback([])` / `useCallback([id])`로 메모이제이션해서 해결했다.
+
+### 인증 미구현 근거
+
+미션 평가 기준이 "React 구조와 데이터 흐름"이며 인증은 선택(보너스) 항목이다. 현재 RLS 정책은 `anon` 키에 전체 CRUD를 허용하는데, 이는 학습 범위 앱임을 `schema.sql`에 주석으로 명시했다. 인증을 추가하면 Supabase Auth + 보호 라우트(`<PrivateRoute>`) 구조가 필요하며, 이번 미션에서는 스코프 밖으로 판단해 제외했다.
+
+---
+
 ## 개발 환경
 
 | 항목 | 내용 |
