@@ -85,6 +85,16 @@ useEffect(() => { refetch(); }, [refetch]); // id 바뀌면 refetch 새 참조 �
 | 수정 | `/bookmarks/:id/edit` → 폼 제출 | `update(values).eq("id", id)` | 해당 상세 페이지로 이동 |
 | 삭제 | `/bookmarks/:id` → 삭제 버튼 | `delete().eq("id", id)` | 목록 페이지로 이동 |
 
+### 삭제·수정 후 목록 자동갱신 흐름
+
+별도의 갱신 API 호출 없이 라우트 이동으로 자연스럽게 최신 데이터를 불러온다.
+
+| 동작 | 이동 경로 | 갱신 원리 |
+| --- | --- | --- |
+| 삭제 성공 | `/bookmarks/:id` → `/bookmarks` | `BookmarksPage` 재마운트 → `useBookmarks`의 `useEffect` 재실행 → 최신 목록 재조회 |
+| 수정 성공 | `/bookmarks/:id/edit` → `/bookmarks/:id` | `BookmarkDetailPage` 재마운트 → `useBookmark(id)`의 `useEffect` 재실행 → 수정된 단건 재조회 |
+| 에러 재시도 | 동일 페이지 유지 | `ErrorState`의 재시도 버튼 → `refetch()` 직접 호출 → 로딩 상태 초기화 후 재조회 |
+
 ### 상태 → 렌더링 변화 포인트
 
 | 상태 변화 | 렌더 결과 |
@@ -94,6 +104,20 @@ useEffect(() => { refetch(); }, [refetch]); // id 바뀌면 refetch 새 참조 �
 | `errors.title` 설정 | `Input`에 `invalid` 클래스 + 필드 아래 에러 메시지 |
 | `submitting: false → true` | 버튼 "처리 중..." + `disabled` |
 | `deleteError` 설정 | 삭제 버튼 위에 에러 메시지 |
+
+---
+
+## 폼 검증 정책
+
+| 필드 | 검증 규칙 | 미검증 이유 |
+| --- | --- | --- |
+| `title` | 빈 문자열 불가 (`trim()`) | 필수 식별 정보 |
+| `url` | 빈 문자열 불가 (`trim()`) | 핵심 데이터로 필수 |
+| `url` 형식 | 미검증 | `http://`, `https://` 외 내부 링크·메모용 URL도 허용하기 위해 의도적으로 제외 |
+| `memo` | 미검증 | 선택 입력 필드 |
+| `category` | 미검증 | `<select>`로 상수 목록 내에서만 선택 가능 — 잘못된 값이 입력될 수 없음 |
+
+에러 메시지는 제출 시 한 번에 표시하고, 해당 필드를 다시 입력하기 시작하는 순간 지워진다 (`handleChange` 내 에러 클리어).
 
 ---
 
@@ -172,6 +196,18 @@ src/
 - **페이지 컴포넌트**: 라우트 하나에 대응하는 최상위 화면. 데이터 조회·CRUD 요청, 라우팅(navigate) 등 "무엇을 할 것인가"를 담당한다.
 - **UI 컴포넌트**: prop만 받아 화면을 그리는 역할만 한다. 외부 의존성(Supabase, Router)을 갖지 않아서, props가 같으면 항상 같은 결과를 렌더링한다.
 
+### 컴포넌트 추출 기준
+
+두 가지 규칙 중 하나라도 해당하면 컴포넌트로 추출했다.
+
+1. **반복 패턴**: 동일한 UI 구조가 2곳 이상에 등장할 때
+   - `Loading`, `ErrorState`, `EmptyState` — 목록·상세·수정 3개 페이지에서 동일하게 사용
+   - `BookmarkForm` — 등록(`BookmarkNewPage`)과 수정(`BookmarkEditPage`)이 같은 필드 구성
+2. **단일 책임**: 하나의 역할만 갖도록 경계를 그을 수 있을 때
+   - `Button` — 클릭 요소의 스타일·상태만 담당 (내용·클릭 동작은 모름)
+   - `BookmarkCard` — 카드 한 장 렌더만 담당 (목록·데이터 소스는 모름)
+   - `BookmarkList` — 배열을 받아 카드를 나열하거나 EmptyState를 보여주는 역할만
+
 재사용 컴포넌트 13개 (`components/` 폴더 전체):
 
 | 컴포넌트 | 역할 | 주요 prop |
@@ -210,6 +246,14 @@ const { bookmark, loading, error, refetch } = useBookmark(id);
 
 URL 파라미터 `id`가 바뀌면 자동으로 재조회한다 (`useCallback([id])` → `useEffect([refetch])`). `.maybeSingle()`로 결과 없을 때 에러 대신 `null`을 반환해 "찾을 수 없습니다" 화면을 별도 처리한다.
 
+**의존성 변화 시 예상 동작:**
+
+| 상황 | 동작 |
+| --- | --- |
+| 같은 id로 재렌더 | `refetch` 참조 유지 → `useEffect` 재실행 안 함 |
+| 다른 id로 이동 | `useCallback([id])`가 새 함수 생성 → `refetch` 참조 변경 → `useEffect` 재실행 → 새 id로 재조회 |
+| 에러 후 재시도 | `ErrorState`의 `onRetry` → `refetch()` 직접 호출 → `loading` 초기화 후 재조회 |
+
 ---
 
 ## 로컬 실행 방법
@@ -237,6 +281,21 @@ $ npm run dev
   ➜  Network: use --host to expose
   ➜  press h + enter to show help
 ```
+
+### 배포 CRUD 확인 체크리스트
+
+배포 URL(https://codyssey-b1-2.vercel.app)에서 아래 흐름을 직접 확인했다.
+
+- [x] `/` 홈 화면 로드, 목록 보기·새 북마크 등록 링크 동작
+- [x] `/bookmarks` 목록 조회 — 카드 렌더, 로딩 스피너 표시 후 전환
+- [x] 카테고리 드롭다운 변경 → 카드 목록 즉시 필터 (페이지 새로고침 없음)
+- [x] `/bookmarks/new` 등록 폼 — 필수값 미입력 시 인라인 에러 메시지 표시
+- [x] 등록 제출 → 성공 시 새 레코드 상세 페이지 이동
+- [x] `/bookmarks/:id` 상세 — 제목·URL·메모·등록일 표시
+- [x] `/bookmarks/:id/edit` 수정 폼 — 기존 값 초기화 확인, 수정 후 상세 이동
+- [x] 상세 페이지 삭제 버튼 → 목록 페이지 이동, 삭제된 항목 미노출 확인
+- [x] 존재하지 않는 경로 접근 → 404 Not Found 페이지 표시
+- [x] 배포 URL 직접 입력(`/bookmarks/new` 등) → SPA rewrite로 정상 렌더
 
 ### 빌드 결과
 
